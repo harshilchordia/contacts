@@ -1,0 +1,17 @@
+# Never commit the unencrypted contacts file
+contacts.csv
+
+# Only commit the encrypted version (contacts.csv.enc)
+
+# Node modules if you install any
+node_modules/
+
+# macOS
+.DS_Store
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

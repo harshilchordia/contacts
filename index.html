@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encrypted Contacts</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Encrypted Contacts</h1>
+        <p class="subtitle">Your contacts are securely encrypted</p>
+
+        <!-- Login Section -->
+        <div class="login-section active">
+            <div class="error" id="loginError"></div>
+            <div class="input-group">
+                <label for="password">Enter Password</label>
+                <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password">
+            </div>
+            <button onclick="login()">Unlock Contacts</button>
+        </div>
+
+        <!-- Contacts Section -->
+        <div class="contacts-section">
+            <div id="contactsList"></div>
+            <button class="logout-btn" onclick="logout()">Lock Contacts</button>
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ IMPORTANT: SET YOUR PASSWORD HASH
+        // To generate your password hash:
+        // 1. Open browser console (F12)
+        // 2. Run: await generatePasswordHash('YourPasswordHere')
+        // 3. Copy the hash and paste it below
+        // 
+        // Default password is: "mySecurePassword123"
+        // Hash below is for that password - CHANGE IT!
+        const PASSWORD_HASH = 'ca6ee54120465533d367b4cac5cd2f12ee75234225130dd89470de546ab9ca46';
+        
+        // CSV file path - use .enc for encrypted file, or .csv for plain text
+        const CSV_FILE = 'contacts.csv.enc';
+        const IS_ENCRYPTED = CSV_FILE.endsWith('.enc');
+        
+        // Current session password (never persisted)
+        let sessionPassword = null;
+        let allContacts = [];
+
+        // Parse CSV data
+        function parseCSV(text) {
+            const lines = text.split('\n');
+            const headers = lines[0].split(',');
+            const contacts = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                
+                const values = parseCSVLine(lines[i]);
+                const contact = {};
+                
+                headers.forEach((header, index) => {
+                    contact[header.trim()] = values[index] ? values[index].trim() : '';
+                });
+                
+                // Extract relevant fields
+                const firstName = contact['First Name'] || '';
+                const middleName = contact['Middle Name'] || '';
+                const lastName = contact['Last Name'] || '';
+                const name = [firstName, middleName, lastName].filter(n => n).join(' ');
+                
+                if (name) {
+                    // Collect all emails
+                    const emails = [];
+                    for (let j = 1; j <= 4; j++) {
+                        const email = contact[`E-mail ${j} - Value`];
+                        if (email && email.trim()) {
+                            emails.push(email.trim());
+                        }
+                    }
+                    
+                    // Collect all phone numbers
+                    const phones = [];
+                    for (let j = 1; j <= 4; j++) {
+                        const phone = contact[`Phone ${j} - Value`];
+                        if (phone && phone.trim()) {
+                            // Split by ::: and add each unique number
+                            phone.split(':::').forEach(p => {
+                                const cleaned = p.trim();
+                                if (cleaned && !phones.includes(cleaned)) {
+                                    phones.push(cleaned);
+                                }
+                            });
+                        }
+                    }
+                    
+                    const notes = contact['Notes'] || '';
+                    const organization = contact['Organization Name'] || '';
+                    
+                    contacts.push({
+                        name,
+                        emails,
+                        phones,
+                        notes,
+                        organization
+                    });
+                }
+            }
+            
+            return contacts;
+        }
+
+        // Parse a single CSV line (handles quoted fields)
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            
+            return result;
+        }
+
+        // Derive encryption key from password using PBKDF2
+        async function deriveKey(password, salt) {
+            const encoder = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                encoder.encode(password),
+                'PBKDF2',
+                false,
+                ['deriveBits', 'deriveKey']
+            );
+            
+            return crypto.subtle.deriveKey(
+                {
+                    name: 'PBKDF2',
+                    salt: salt,
+                    iterations: 100000,
+                    hash: 'SHA-256'
+                },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt', 'decrypt']
+            );
+        }
+
+        // Decrypt encrypted CSV file
+        async function decryptCSV(encryptedData, password) {
+            try {
+                const SALT_LENGTH = 32;
+                const IV_LENGTH = 16;
+                const TAG_LENGTH = 16;
+                
+                // Extract components
+                const salt = encryptedData.slice(0, SALT_LENGTH);
+                const iv = encryptedData.slice(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+                const authTag = encryptedData.slice(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+                const encrypted = encryptedData.slice(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+                
+                // Combine encrypted data with auth tag for Web Crypto API
+                const encryptedWithTag = new Uint8Array(encrypted.length + authTag.length);
+                encryptedWithTag.set(encrypted, 0);
+                encryptedWithTag.set(authTag, encrypted.length);
+                
+                // Derive key
+                const key = await deriveKey(password, salt);
+                
+                // Decrypt
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: iv, tagLength: 128 },
+                    key,
+                    encryptedWithTag
+                );
+                
+                const decoder = new TextDecoder();
+                return decoder.decode(decrypted);
+            } catch (e) {
+                console.error('Decryption failed:', e);
+                throw new Error('Failed to decrypt CSV file. Wrong password?');
+            }
+        }
+
+        // Load contacts from CSV file
+        async function loadContactsFromCSV() {
+            try {
+                const response = await fetch(CSV_FILE);
+                if (!response.ok) {
+                    throw new Error(`Failed to load ${CSV_FILE}`);
+                }
+                
+                let csvText;
+                
+                if (IS_ENCRYPTED) {
+                    // Load encrypted file as ArrayBuffer
+                    const encryptedData = await response.arrayBuffer();
+                    const encryptedArray = new Uint8Array(encryptedData);
+                    
+                    // Decrypt using session password
+                    csvText = await decryptCSV(encryptedArray, sessionPassword);
+                } else {
+                    // Load plain text CSV
+                    csvText = await response.text();
+                }
+                
+                allContacts = parseCSV(csvText);
+                return allContacts;
+            } catch (error) {
+                console.error('Error loading contacts:', error);
+                throw error;
+            }
+        }
+
+        // Hash password using SHA-256
+        async function hashPassword(password) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function login() {
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            // Hash the entered password
+            const enteredHash = await hashPassword(password);
+            
+            if (enteredHash === PASSWORD_HASH) {
+                // Store password in session (memory only, not localStorage)
+                sessionPassword = password;
+                
+                document.querySelector('.login-section').classList.remove('active');
+                document.querySelector('.contacts-section').classList.add('active');
+                
+                // Show loading message
+                document.getElementById('contactsList').innerHTML = '<div class="loading">Loading contacts...</div>';
+                
+                // Load and display contacts
+                try {
+                    await loadContactsFromCSV();
+                    displayContacts();
+                } catch (error) {
+                    // If decryption fails, show error and go back to login
+                    errorDiv.textContent = '❌ ' + error.message;
+                    errorDiv.classList.add('active');
+                    document.querySelector('.contacts-section').classList.remove('active');
+                    document.querySelector('.login-section').classList.add('active');
+                    sessionPassword = null;
+                    return;
+                }
+                
+                document.getElementById('password').value = '';
+                errorDiv.classList.remove('active');
+            } else {
+                errorDiv.textContent = '❌ Incorrect password. Please try again.';
+                errorDiv.classList.add('active');
+                sessionPassword = null;
+            }
+        }
+
+        function logout() {
+            // Clear session password and contacts
+            sessionPassword = null;
+            allContacts = [];
+            document.querySelector('.contacts-section').classList.remove('active');
+            document.querySelector('.login-section').classList.add('active');
+        }
+
+        function displayContacts(searchTerm = '') {
+            const listDiv = document.getElementById('contactsList');
+            
+            let filteredContacts = allContacts;
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                filteredContacts = allContacts.filter(contact => 
+                    contact.name.toLowerCase().includes(term) ||
+                    contact.emails.some(e => e.toLowerCase().includes(term)) ||
+                    contact.phones.some(p => p.toLowerCase().includes(term)) ||
+                    contact.notes.toLowerCase().includes(term) ||
+                    contact.organization.toLowerCase().includes(term)
+                );
+            }
+            
+            if (filteredContacts.length === 0) {
+                listDiv.innerHTML = `
+                    <div class="search-box">
+                        <input type="text" id="searchBox" placeholder="🔍 Search contacts..." oninput="handleSearch(this.value)">
+                    </div>
+                    <div class="no-contacts">No contacts found.</div>
+                `;
+                return;
+            }
+            
+            const searchBox = `
+                <div class="search-box">
+                    <input type="text" id="searchBox" placeholder="🔍 Search contacts..." value="${escapeHtml(searchTerm)}" oninput="handleSearch(this.value)">
+                </div>
+            `;
+            
+            const contactsHTML = filteredContacts.map(contact => {
+                let html = `<div class="contact-item">
+                    <div class="contact-name">${escapeHtml(contact.name)}</div>
+                    ${contact.organization ? `<div class="contact-info"><strong>🏢 Organization:</strong> ${escapeHtml(contact.organization)}</div>` : ''}`;
+                
+                // Display all emails
+                if (contact.emails && contact.emails.length > 0) {
+                    contact.emails.forEach((email, index) => {
+                        const label = contact.emails.length > 1 ? `📧 Email ${index + 1}:` : '📧 Email:';
+                        html += `<div class="contact-info"><strong>${label}</strong> ${escapeHtml(email)}</div>`;
+                    });
+                }
+                
+                // Display all phone numbers
+                if (contact.phones && contact.phones.length > 0) {
+                    contact.phones.forEach((phone, index) => {
+                        const label = contact.phones.length > 1 ? `📱 Phone ${index + 1}:` : '📱 Phone:';
+                        html += `<div class="contact-info"><strong>${label}</strong> ${escapeHtml(phone)}</div>`;
+                    });
+                }
+                
+                html += `${contact.notes ? `<div class="contact-info"><strong>📝 Notes:</strong> ${escapeHtml(contact.notes)}</div>` : ''}
+                </div>`;
+                
+                return html;
+            }).join('');
+            
+            listDiv.innerHTML = searchBox + contactsHTML;
+        }
+
+        function handleSearch(searchTerm) {
+            displayContacts(searchTerm);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Utility function to generate password hash (use in console)
+        window.generatePasswordHash = async function(password) {
+            const hash = await hashPassword(password);
+            console.log('Your password hash:');
+            console.log(hash);
+            console.log('\nCopy this hash and replace PASSWORD_HASH in the code.');
+            return hash;
+        }
+
+        // Allow Enter key to login
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
