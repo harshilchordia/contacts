@@ -8,8 +8,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Encrypted Contacts</h1>
-        <p class="subtitle">Your contacts are securely encrypted</p>
+        <h1>Encrypted Contacts</h1>
 
         <!-- Login Section -->
         <div class="login-section active">
@@ -24,7 +23,6 @@
         <!-- Contacts Section -->
         <div class="contacts-section">
             <div id="contactsList"></div>
-            <button class="logout-btn" onclick="logout()">Lock Contacts</button>
         </div>
     </div>
 
@@ -299,16 +297,22 @@
             if (filteredContacts.length === 0) {
                 listDiv.innerHTML = `
                     <div class="search-box">
-                        <input type="text" id="searchBox" placeholder="🔍 Search contacts..." oninput="handleSearch(this.value)">
+                        <input type="text" id="searchBox" placeholder="Search contacts..." value="${escapeHtml(searchTerm)}" oninput="handleSearch(this.value)">
                     </div>
                     <div class="no-contacts">No contacts found.</div>
                 `;
+                // Restore focus to search box
+                const searchBoxElement = document.getElementById('searchBox');
+                if (searchBoxElement && searchTerm !== undefined) {
+                    searchBoxElement.focus();
+                    searchBoxElement.setSelectionRange(searchTerm.length, searchTerm.length);
+                }
                 return;
             }
             
             const searchBox = `
                 <div class="search-box">
-                    <input type="text" id="searchBox" placeholder="🔍 Search contacts..." value="${escapeHtml(searchTerm)}" oninput="handleSearch(this.value)">
+                    <input type="text" id="searchBox" placeholder="Search contacts..." value="${escapeHtml(searchTerm)}" oninput="handleSearch(this.value)">
                 </div>
             `;
             
@@ -340,6 +344,14 @@
             }).join('');
             
             listDiv.innerHTML = searchBox + contactsHTML;
+            
+            // Restore focus to search box after re-render
+            const searchBoxElement = document.getElementById('searchBox');
+            if (searchBoxElement && searchTerm !== undefined) {
+                searchBoxElement.focus();
+                // Place cursor at the end of the text
+                searchBoxElement.setSelectionRange(searchTerm.length, searchTerm.length);
+            }
         }
 
         function handleSearch(searchTerm) {
