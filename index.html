@@ -27,16 +27,6 @@
     </div>
 
     <script>
-        // ⚠️ IMPORTANT: SET YOUR PASSWORD HASH
-        // To generate your password hash:
-        // 1. Open browser console (F12)
-        // 2. Run: await generatePasswordHash('YourPasswordHere')
-        // 3. Copy the hash and paste it below
-        // 
-        // Default password is: "mySecurePassword123"
-        // Hash below is for that password - CHANGE IT!
-        const PASSWORD_HASH = '05557e697a0a5814377fabe14d218958c20f215f406c0e1dc5cfd5798b208911';
-        
         // CSV file path - use .enc for encrypted file, or .csv for plain text
         const CSV_FILE = 'contacts.csv.enc';
         const IS_ENCRYPTED = CSV_FILE.endsWith('.enc');
@@ -222,51 +212,39 @@
             }
         }
 
-        // Hash password using SHA-256
-        async function hashPassword(password) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(password);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
         async function login() {
             const password = document.getElementById('password').value;
             const errorDiv = document.getElementById('loginError');
             
-            // Hash the entered password
-            const enteredHash = await hashPassword(password);
+            if (!password) {
+                errorDiv.textContent = '❌ Please enter a password.';
+                errorDiv.classList.add('active');
+                return;
+            }
             
-            if (enteredHash === PASSWORD_HASH) {
-                // Store password in session (memory only, not localStorage)
-                sessionPassword = password;
+            // Store password in session (memory only, not localStorage)
+            sessionPassword = password;
+            
+            document.querySelector('.login-section').classList.remove('active');
+            document.querySelector('.contacts-section').classList.add('active');
+            
+            // Show loading message
+            document.getElementById('contactsList').innerHTML = '<div class="loading">Decrypting and loading contacts...</div>';
+            
+            // Try to load and decrypt contacts
+            try {
+                await loadContactsFromCSV();
+                displayContacts();
                 
-                document.querySelector('.login-section').classList.remove('active');
-                document.querySelector('.contacts-section').classList.add('active');
-                
-                // Show loading message
-                document.getElementById('contactsList').innerHTML = '<div class="loading">Loading contacts...</div>';
-                
-                // Load and display contacts
-                try {
-                    await loadContactsFromCSV();
-                    displayContacts();
-                } catch (error) {
-                    // If decryption fails, show error and go back to login
-                    errorDiv.textContent = '❌ ' + error.message;
-                    errorDiv.classList.add('active');
-                    document.querySelector('.contacts-section').classList.remove('active');
-                    document.querySelector('.login-section').classList.add('active');
-                    sessionPassword = null;
-                    return;
-                }
-                
+                // Success! Clear password input and error
                 document.getElementById('password').value = '';
                 errorDiv.classList.remove('active');
-            } else {
-                errorDiv.textContent = '❌ Incorrect password. Please try again.';
+            } catch (error) {
+                // If decryption fails, show error and go back to login
+                errorDiv.textContent = '❌ Incorrect password or failed to decrypt contacts.';
                 errorDiv.classList.add('active');
+                document.querySelector('.contacts-section').classList.remove('active');
+                document.querySelector('.login-section').classList.add('active');
                 sessionPassword = null;
             }
         }
@@ -362,15 +340,6 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        // Utility function to generate password hash (use in console)
-        window.generatePasswordHash = async function(password) {
-            const hash = await hashPassword(password);
-            console.log('Your password hash:');
-            console.log(hash);
-            console.log('\nCopy this hash and replace PASSWORD_HASH in the code.');
-            return hash;
         }
 
         // Allow Enter key to login

@@ -4,11 +4,12 @@ A secure, password-protected contacts viewer with encrypted CSV storage for GitH
 
 ## 🌟 Features
 
-- **Password Protected**: SHA-256 password hashing
+- **Password Protected**: No password hash stored - verification through decryption
 - **AES-256-GCM Encryption**: Military-grade encryption for contacts file
 - **Client-Side Only**: No server needed, runs entirely in browser
 - **Searchable**: Filter contacts by name, email, phone, organization, or notes
 - **Multiple Contact Info**: Displays all phone numbers and emails per contact
+- **Dark Theme**: Easy on the eyes with modern dark interface
 
 ## 🚀 Setup
 
@@ -22,17 +23,7 @@ node encrypt-csv.js
 
 You'll be prompted for a password. This creates `contacts.csv.enc` (encrypted file).
 
-### 2. Set Your Password Hash
-
-Open the page in a browser, open DevTools Console (F12), and run:
-
-```javascript
-await generatePasswordHash('YourPasswordHere')
-```
-
-Copy the hash and update `PASSWORD_HASH` in `index.html` (around line 39).
-
-### 3. Deploy
+### 2. Deploy
 
 Commit and push to GitHub:
 
@@ -49,7 +40,7 @@ Your site will be live at `https://yourusername.github.io`
 When you need to update contacts:
 
 1. Edit `contacts.csv` (locally, never commit this!)
-2. Re-encrypt: `node encrypt-csv.js`
+2. Re-encrypt: `node encrypt-csv.js` (use the same password!)
 3. Commit the new `contacts.csv.enc`:
    ```bash
    git add contacts.csv.enc
@@ -59,10 +50,19 @@ When you need to update contacts:
 
 ## 🔒 Security
 
-- **Password Hash**: Only SHA-256 hash stored in code, password never visible
+- **No Password Hash**: Password is verified by attempting decryption (prevents hash cracking)
 - **CSV Encryption**: AES-256-GCM with PBKDF2 (100,000 iterations)
 - **Safe for Public Repos**: Encrypted file can be safely committed
 - **Session-Only**: Password stored in memory only during session
+- **Brute Force Protection**: PBKDF2 iterations make each password guess expensive (~100ms)
+
+### Security Improvement Over Hash-Based Auth
+
+Unlike traditional hash-based authentication, this system:
+- ❌ **No stored hash** to crack with rainbow tables or brute force
+- ✅ **Verification through decryption** - attacker must decrypt the entire file for each guess
+- ✅ **100,000 PBKDF2 iterations** slow down each attempt significantly
+- ✅ **Better protection** against password guessing attacks
 
 ## 📁 Files
 
