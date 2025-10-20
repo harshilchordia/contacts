@@ -241,7 +241,7 @@
                 errorDiv.classList.remove('active');
             } catch (error) {
                 // If decryption fails, show error and go back to login
-                errorDiv.textContent = '❌ Incorrect password or failed to decrypt contacts.';
+                errorDiv.textContent = 'Incorrect password or failed to decrypt contacts.';
                 errorDiv.classList.add('active');
                 document.querySelector('.contacts-section').classList.remove('active');
                 document.querySelector('.login-section').classList.add('active');
