@@ -30,6 +30,13 @@ h1 {
     text-align: center;
 }
 
+h4 {
+    color: #9ca3af;
+    margin-bottom: 30px;
+    text-align: center;
+    font-weight: 400;
+}
+
 .subtitle {
     color: #9ca3af;
     text-align: center;
